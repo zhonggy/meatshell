@@ -26,7 +26,7 @@ the tens-of-MB range of a native binary.
 
 - [ ] Full VT/ANSI terminal emulation (integrate [`alacritty_terminal`](https://crates.io/crates/alacritty_terminal))
 - [ ] Remote host resource monitoring (run a remote collector script, like FinalShell)
-- [ ] SFTP file browser + drag-and-drop upload/download
+- [x] SFTP file browser + drag-and-drop upload/download
 - [ ] Known-hosts (`known_hosts`) verification
 - [ ] Store session passwords in the OS keychain
 

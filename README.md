@@ -25,7 +25,7 @@ JVM 压到几十 MB 原生级别。
 
 - [ ] 完整 VT/ANSI 终端模拟（接入 [`alacritty_terminal`](https://crates.io/crates/alacritty_terminal)）
 - [ ] 远端主机资源监控（与 FinalShell 一样执行远端脚本收集）
-- [ ] SFTP 文件浏览 + 拖拽上传/下载
+- [x] SFTP 文件浏览 + 拖拽上传/下载
 - [ ] 已知主机 (known_hosts) 校验
 - [ ] 会话密码使用 OS 钥匙串存储
 
