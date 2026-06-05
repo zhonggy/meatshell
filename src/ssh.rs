@@ -302,11 +302,20 @@ async fn run_session(
             .await
             .context("password auth failed")?,
         AuthMethod::Key => {
-            if session.private_key_path.trim().is_empty() {
+            let raw = session.private_key_path.trim();
+            if raw.is_empty() {
                 return Err(anyhow!("私钥路径为空"));
             }
-            let keypair = load_secret_key(Path::new(&session.private_key_path), None)
-                .with_context(|| format!("failed to load key {}", session.private_key_path))?;
+            // Normalise separators (we store `/` everywhere) and be forgiving if
+            // the user pointed at the `.pub` *public* key — the private key is the
+            // same path without that suffix.
+            let normalised = raw.replace('\\', "/");
+            let key_path = normalised
+                .strip_suffix(".pub")
+                .map(str::to_string)
+                .unwrap_or(normalised);
+            let keypair = load_secret_key(Path::new(&key_path), None)
+                .with_context(|| format!("failed to load key {key_path}"))?;
             let hash = if keypair.algorithm().is_rsa() {
                 Some(HashAlg::Sha256)
             } else {

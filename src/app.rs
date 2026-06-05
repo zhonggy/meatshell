@@ -612,7 +612,8 @@ fn wire_session_callbacks(
                 user: draft.user.to_string(),
                 auth: AuthMethod::from_str(&draft.auth.to_string()),
                 password: draft.password.to_string(),
-                private_key_path: draft.private_key_path.to_string(),
+                // Store the key path with forward slashes uniformly.
+                private_key_path: draft.private_key_path.to_string().replace('\\', "/"),
                 last_used: None,
             };
             {
@@ -635,6 +636,27 @@ fn wire_session_callbacks(
         window.on_session_dialog_cancel(move || {
             if let Some(w) = weak.upgrade() {
                 w.set_dialog_open(false);
+            }
+        });
+    }
+
+    // Private-key file picker: pick the private key and store its path with
+    // forward-slash separators (uniform across Windows/Linux; russh accepts them).
+    {
+        let weak = window.as_weak();
+        window.on_session_dialog_pick_key(move || {
+            let mut dialog = rfd::FileDialog::new().set_title("选择私钥文件");
+            // Start in ~/.ssh if it exists.
+            if let Some(home) = directories::UserDirs::new().map(|u| u.home_dir().join(".ssh")) {
+                if home.is_dir() {
+                    dialog = dialog.set_directory(home);
+                }
+            }
+            if let Some(file) = dialog.pick_file() {
+                let path = file.to_string_lossy().replace('\\', "/");
+                if let Some(w) = weak.upgrade() {
+                    w.set_dialog_key_path(path.into());
+                }
             }
         });
     }

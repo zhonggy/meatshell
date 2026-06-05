@@ -123,6 +123,7 @@ export component AppWindow inherits Window {
     callback remove-session(string /* session-id */);
     callback session-dialog-submit(SessionDraft);
     callback session-dialog-cancel();
+    callback session-dialog-pick-key();
 
     callback tab-selected(string);
     callback tab-closed(string);
@@ -653,5 +654,6 @@ export component AppWindow inherits Window {
         draft-key-path <=> root.dialog-key-path;
         submit(draft) => { root.session-dialog-submit(draft); }
         cancel => { root.session-dialog-cancel(); }
+        pick-key-file => { root.session-dialog-pick-key(); }
     }
 }
