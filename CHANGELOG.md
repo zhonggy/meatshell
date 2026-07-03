@@ -3,6 +3,39 @@
 All notable changes are documented here. 本文件记录所有重要变更。
 中英对照（English first, 中文在后）.
 
+## [0.5.3] - 2026-07-04
+
+### 新增 / Added
+
+- **欢迎页侧栏支持四向停靠与持久化。** “欢迎页为侧栏”开启后，快速连接面板现在可以拖到左/右/上/下任一侧，并记住停靠位置、宽度和收起状态。
+- **资源面板收起状态持久化。** 资源面板的展开/收起会按最后一次用户操作恢复；只有老配置里没有该状态时，才回退读取“设置 - 界面 - 侧栏”的默认收起设置。
+- **同边收起图标栏合并与外侧停靠。** 快速连接和资源面板在同一侧时，只允许一个面板展开；两个都收起时图标位于同一列/同一行；一个展开一个收起时，收起图标栏始终贴在该侧最外侧。
+- **资源面板新增内部浅色内容底。** 资源面板现在和快速连接一样有 inset 的圆角浅色/磨砂内容底，视觉层级更统一。
+- **开发构建提速配置。** dev profile 下本 crate 取消优化、依赖保持轻度优化，并在 Windows MSVC 下使用 `rust-lld.exe`，提升日常增量 build/check 速度。
+
+### 修复 / Fixed
+
+- **修复欢迎页为侧栏时 tab 栏仍显示“+”的问题。** 开启欢迎页侧栏后，tab 栏不再显示新建欢迎页入口，避免无法切回欢迎页的误导。
+- **修复启动时同边双面板同时展开的兜底问题。** 如果配置恢复后快速连接和资源面板同边且都处于展开状态，启动时会自动收起资源面板，保持“一侧只展开一个面板”。
+- **修复不同停靠方向下收起箭头位置和图标不一致。** 收起按钮按停靠方向放到合适一侧，并统一使用 Material Icons 箭头。
+
+---
+
+### Added
+
+- **Four-edge docking and persistence for the welcome sidebar.** When “Welcome page as sidebar” is enabled, the quick-connect panel can now dock to the left, right, top, or bottom, and remembers its dock edge, size, and collapsed state.
+- **Persistent resource-panel collapse state.** The resource panel now restores the user’s last expanded/collapsed state; older configs without this state still fall back to the Interface sidebar default.
+- **Merged outer collapse strips for same-edge panels.** When quick connect and the resource panel share an edge, only one panel expands at a time; collapsed icons share one column/row, and a collapsed strip stays on the outer edge when the other panel is expanded.
+- **Inset light content surface for the resource panel.** The resource panel now matches quick connect with an inset rounded frosted content surface.
+- **Faster development builds.** The dev profile now leaves the local crate unoptimized, keeps dependencies lightly optimized, and uses `rust-lld.exe` on Windows MSVC for faster incremental build/check cycles.
+
+### Fixed
+
+- **Hide the tab “+” button when the welcome page is a sidebar.** This avoids a misleading new-welcome-tab entry when the welcome page already lives in the sidebar.
+- **Prevent same-edge double-expanded panels on startup.** If restored config would expand both quick connect and the resource panel on the same edge, the resource panel is collapsed at startup.
+- **Normalize collapse arrow placement and icons across dock edges.** Collapse buttons now use Material Icons and move according to the current dock edge.
+
+
 ## [0.5.1] - 2026-07-01
 
 ### Added / 新增

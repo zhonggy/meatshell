@@ -482,23 +482,34 @@ pub fn run() -> Result<()> {
         let s = store.borrow();
         let collapse_sidebar = s.collapse_sidebar_default();
         let collapse_sftp = s.collapse_sftp_default();
+        let sidebar_dock = s.sidebar_dock();
+        let welcome_as_sidebar = s.welcome_as_sidebar();
+        let welcome_sidebar_dock = s.welcome_sidebar_dock();
+        let mut sidebar_collapsed = s.sidebar_collapsed().unwrap_or(collapse_sidebar);
+        let welcome_collapsed = s.welcome_collapsed().unwrap_or(false);
+        if welcome_as_sidebar
+            && sidebar_dock == welcome_sidebar_dock
+            && !sidebar_collapsed
+            && !welcome_collapsed
+        {
+            sidebar_collapsed = true;
+        }
         window.set_collapse_sidebar_default(collapse_sidebar);
         window.set_collapse_sftp_default(collapse_sftp);
         // Restore the persisted panel docking layout (#dock).
         window.set_sidebar_width(s.sidebar_width());
         window.set_sidebar_height(s.sidebar_height());
-        window.set_sidebar_dock(s.sidebar_dock().into());
+        window.set_sidebar_dock(sidebar_dock.into());
         window.set_sftp_panel_width(s.sftp_panel_width());
         window.set_sftp_panel_height(s.sftp_panel_height());
         window.set_sftp_dock(s.sftp_dock().into());
-        window.set_welcome_as_sidebar(s.welcome_as_sidebar());
+        window.set_welcome_as_sidebar(welcome_as_sidebar);
         window.set_welcome_sidebar_width(s.welcome_sidebar_width());
-        window.set_welcome_collapsed(s.welcome_collapsed());
+        window.set_welcome_sidebar_dock(welcome_sidebar_dock.into());
+        window.set_welcome_collapsed(welcome_collapsed);
+        window.set_sidebar_collapsed(sidebar_collapsed);
         window.set_wallpaper_overlay(s.wallpaper_overlay());
         window.set_update_check_enabled(s.update_check_enabled()); // #184
-        if collapse_sidebar {
-            window.set_sidebar_collapsed(true);
-        }
         if collapse_sftp {
             window.set_sftp_collapsed(true);
             window.set_sftp_saved_height(s.sftp_panel_height());
@@ -539,9 +550,25 @@ pub fn run() -> Result<()> {
     }
     {
         let store = store.clone();
+        window.on_set_sidebar_collapsed(move |v| {
+            let mut s = store.borrow_mut();
+            s.set_sidebar_collapsed(v);
+            let _ = s.save();
+        });
+    }
+    {
+        let store = store.clone();
         window.on_persist_welcome_sidebar_width(move |w| {
             let mut s = store.borrow_mut();
             s.set_welcome_sidebar_width(w);
+            let _ = s.save();
+        });
+    }
+    {
+        let store = store.clone();
+        window.on_persist_welcome_sidebar_dock(move |dock| {
+            let mut s = store.borrow_mut();
+            s.set_welcome_sidebar_dock(dock.to_string());
             let _ = s.save();
         });
     }
@@ -2848,9 +2875,13 @@ fn save_layout(win: &AppWindow, store: &Rc<RefCell<ConfigStore>>) {
     s.set_sidebar_width(win.get_sidebar_width());
     s.set_sidebar_height(win.get_sidebar_height());
     s.set_sidebar_dock(win.get_sidebar_dock().to_string());
+    s.set_sidebar_collapsed(win.get_sidebar_collapsed());
     s.set_sftp_panel_width(win.get_sftp_panel_width());
     s.set_sftp_panel_height(win.get_sftp_panel_height());
     s.set_sftp_dock(win.get_sftp_dock().to_string());
+    s.set_welcome_sidebar_width(win.get_welcome_sidebar_width());
+    s.set_welcome_sidebar_dock(win.get_welcome_sidebar_dock().to_string());
+    s.set_welcome_collapsed(win.get_welcome_collapsed());
     // A maximized size isn't a useful "preferred" size to restore to, so only
     // remember the windowed size.
     if !win.get_window_maximized() && w > 200.0 && h > 200.0 {

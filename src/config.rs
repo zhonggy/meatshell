@@ -544,6 +544,10 @@ pub struct ConfigFile {
     /// Collapse the left resource sidebar on startup (#78).
     #[serde(default)]
     pub collapse_sidebar_default: bool,
+    /// Last resource-sidebar collapsed state. None means fall back to
+    /// `collapse_sidebar_default` for older configs.
+    #[serde(default)]
+    pub sidebar_collapsed: Option<bool>,
     /// User-adjustable width of the left resource sidebar, in logical pixels.
     /// Persisted across restarts so the drag-resized width sticks.
     #[serde(default = "default_sidebar_width")]
@@ -581,9 +585,13 @@ pub struct ConfigFile {
     /// Width (logical px) of the welcome/session sidebar when docked (v0.5).
     #[serde(default)]
     pub welcome_sidebar_width: f32,
-    /// Welcome sidebar collapsed to the edge icon strip (IDEA-style) (v0.5).
+    /// Welcome/session sidebar dock edge (left|right|top|bottom).
     #[serde(default)]
-    pub welcome_collapsed: bool,
+    pub welcome_sidebar_dock: String,
+    /// Welcome sidebar collapsed to the edge icon strip (IDEA-style) (v0.5).
+    /// None means the user has not explicitly collapsed/expanded it yet.
+    #[serde(default)]
+    pub welcome_collapsed: Option<bool>,
     /// Frosted-panel opacity over a wallpaper (0.40–1.00); user-adjustable via the
     /// Interface › Wallpaper opacity slider. 0 = use the 0.86 default (v0.5).
     #[serde(default)]
@@ -1041,6 +1049,12 @@ impl ConfigStore {
     pub fn set_sidebar_dock(&mut self, v: String) {
         self.cache.sidebar_dock = v;
     }
+    pub fn sidebar_collapsed(&self) -> Option<bool> {
+        self.cache.sidebar_collapsed
+    }
+    pub fn set_sidebar_collapsed(&mut self, v: bool) {
+        self.cache.sidebar_collapsed = Some(v);
+    }
     pub fn welcome_as_sidebar(&self) -> bool {
         self.cache.welcome_as_sidebar
     }
@@ -1054,11 +1068,18 @@ impl ConfigStore {
     pub fn set_welcome_sidebar_width(&mut self, v: f32) {
         self.cache.welcome_sidebar_width = v;
     }
-    pub fn welcome_collapsed(&self) -> bool {
+    pub fn welcome_sidebar_dock(&self) -> String {
+        let d = self.cache.welcome_sidebar_dock.trim();
+        if d.is_empty() { "left".into() } else { d.to_string() }
+    }
+    pub fn set_welcome_sidebar_dock(&mut self, v: String) {
+        self.cache.welcome_sidebar_dock = v;
+    }
+    pub fn welcome_collapsed(&self) -> Option<bool> {
         self.cache.welcome_collapsed
     }
     pub fn set_welcome_collapsed(&mut self, v: bool) {
-        self.cache.welcome_collapsed = v;
+        self.cache.welcome_collapsed = Some(v);
     }
     /// Whether the startup new-version check is enabled (#184).
     pub fn update_check_enabled(&self) -> bool {

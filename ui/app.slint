@@ -275,6 +275,7 @@ export component AppWindow inherits Window {
     callback win-drag();          // start an OS window-move
     callback win-resize(int);     // start an OS resize; arg = direction code
     in-out property <bool> sidebar-collapsed: false; // left panel hidden
+    callback set-sidebar-collapsed(bool);       // apply + persist
     // User-draggable size of the resource sidebar. width is used when docked
     // left/right, height when docked top/bottom. Seeded / persisted via the
     // persist-* callbacks (fired on drag end).
@@ -305,13 +306,17 @@ export component AppWindow inherits Window {
     // The top-right toolbar icons float over the tab row; when the sidebar docks
     // top/right it covers that corner, so shift the icons to stay over the tabs.
     property <length> toolbar-x-off:
-        (root.sidebar-dock == "right" && !root.sidebar-collapsed) ? root.sidebar-width + 4px
-        // Docked right + collapsed: shift left to leave room for the expand
-        // button at the far-right corner (#dock).
-      : (root.sidebar-dock == "right" && root.sidebar-collapsed) ? 36px
-      : 0px;
+        (root.sidebar-dock == "right"
+            ? (root.sidebar-collapsed ? 36px : root.sidebar-width + 4px)
+            : 0px)
+        + ((root.welcome-as-sidebar && root.welcome-sidebar-dock == "right")
+            ? root.welcome-sidebar-taken
+            : 0px);
     property <length> toolbar-y-off:
-        (root.sidebar-dock == "top" && !root.sidebar-collapsed) ? root.sidebar-height + 4px : 0px;
+        (root.sidebar-dock == "top" && !root.sidebar-collapsed ? root.sidebar-height + 4px : 0px)
+        + ((root.welcome-as-sidebar && root.welcome-sidebar-dock == "top")
+            ? root.welcome-sidebar-taken
+            : 0px);
     in-out property <bool> about-open: false;     // centered About dialog
     callback open-repo();                          // open the project's GitHub page
     in-out property <bool> shortcuts-open: false; // centered keyboard-shortcuts dialog (#103)
@@ -419,6 +424,12 @@ export component AppWindow inherits Window {
     // Drag-resizable width of that welcome sidebar (logical px), persisted.
     in-out property <length> welcome-sidebar-width: 240px;
     callback persist-welcome-sidebar-width(float);
+    in-out property <string> welcome-sidebar-dock: "left";
+    property <bool> welcome-sidebar-horizontal:
+        root.welcome-sidebar-dock == "left" || root.welcome-sidebar-dock == "right";
+    property <length> welcome-sidebar-taken:
+        root.welcome-collapsed ? 36px : root.welcome-sidebar-width;
+    callback persist-welcome-sidebar-dock(string);
     // Welcome sidebar collapsed to the edge icon strip (IDEA-style), persisted.
     in-out property <bool> welcome-collapsed: false;
     callback set-welcome-collapsed(bool);          // apply + persist
@@ -776,36 +787,97 @@ export component AppWindow inherits Window {
         // right in `rest`.
         // Collapsed-only (M5): the icon strip shows only while collapsed; the
         // panel itself (welcome-w) only while expanded — one or the other.
-        property <length> strip-w: (root.welcome-as-sidebar && root.welcome-collapsed) ? 36px : 0px;
-        property <length> welcome-w: (root.welcome-as-sidebar && !root.welcome-collapsed) ? root.welcome-sidebar-width : 0px;
+        property <bool> sidebar-strip-outside:
+            root.welcome-as-sidebar && !root.welcome-collapsed
+            && root.sidebar-collapsed && root.sidebar-dock == root.welcome-sidebar-dock;
+        property <length> sidebar-outside-strip: dock-area.sidebar-strip-outside ? 36px : 0px;
+        property <length> welcome-strip: (root.welcome-as-sidebar && root.welcome-collapsed) ? 36px : 0px;
+        property <length> welcome-size: (root.welcome-as-sidebar && !root.welcome-collapsed) ? root.welcome-sidebar-width : 0px;
+        property <length> welcome-taken: welcome-strip + welcome-size + sidebar-outside-strip;
+        property <bool> welcome-horizontal: root.welcome-sidebar-horizontal;
         property <bool> welcome-sidebar-dragging;
+        property <bool> combine-collapsed-tools:
+            root.welcome-as-sidebar && root.welcome-collapsed
+            && root.sidebar-collapsed && root.sidebar-dock == root.welcome-sidebar-dock;
 
         // Collapsed welcome → a thin left icon strip (click the icon to re-open).
         if root.welcome-as-sidebar && root.welcome-collapsed : ToolStrip {
-            x: 0; y: 0; width: parent.strip-w; height: parent.height;
-            dock-edge: "left";
+            x: root.welcome-sidebar-dock == "right" ? parent.width - parent.welcome-strip : 0px;
+            y: root.welcome-sidebar-dock == "bottom" ? parent.height - parent.welcome-strip : 0px;
+            width: parent.welcome-horizontal ? parent.welcome-strip : parent.width;
+            height: parent.welcome-horizontal ? parent.height : parent.welcome-strip;
+            dock-edge: root.welcome-sidebar-dock;
             glyph: "\u{E88A}";   // session list / welcome
+            show-second: parent.combine-collapsed-tools;
+            second-glyph: "\u{E871}";   // dashboard — resource panel
             expand => {
                 root.welcome-collapsed = false;
                 root.set-welcome-collapsed(false);
+                if (root.sidebar-dock == root.welcome-sidebar-dock) {
+                    root.sidebar-collapsed = true;
+                    root.set-sidebar-collapsed(true);
+                }
+            }
+            expand-second => {
+                root.sidebar-collapsed = false;
+                root.set-sidebar-collapsed(false);
+            }
+        }
+
+        if dock-area.sidebar-strip-outside : ToolStrip {
+            x: root.welcome-sidebar-dock == "right" ? parent.width - parent.sidebar-outside-strip : 0px;
+            y: root.welcome-sidebar-dock == "bottom" ? parent.height - parent.sidebar-outside-strip : 0px;
+            width: parent.welcome-horizontal ? parent.sidebar-outside-strip : parent.width;
+            height: parent.welcome-horizontal ? parent.height : parent.sidebar-outside-strip;
+            dock-edge: root.welcome-sidebar-dock;
+            glyph: "\u{E871}";
+            expand => {
+                root.sidebar-collapsed = false;
+                root.set-sidebar-collapsed(false);
+                root.welcome-collapsed = true;
+                root.set-welcome-collapsed(true);
             }
         }
 
         // Welcome / session list, to the right of the icon strip. Hidden when
         // collapsed — its icon stays in the strip; clicking it re-opens.
         if root.welcome-as-sidebar && !root.welcome-collapsed : Rectangle {
-            x: parent.strip-w; y: 0; width: parent.welcome-w; height: parent.height;
+            x: root.welcome-sidebar-dock == "right" ? parent.width - parent.sidebar-outside-strip - parent.welcome-size
+             : root.welcome-sidebar-dock == "left" ? parent.sidebar-outside-strip
+             : 0px;
+            y: root.welcome-sidebar-dock == "bottom" ? parent.height - parent.sidebar-outside-strip - parent.welcome-size
+             : root.welcome-sidebar-dock == "top" ? parent.sidebar-outside-strip
+             : 0px;
+            width: parent.welcome-horizontal ? parent.welcome-size : parent.width;
+            height: parent.welcome-horizontal ? parent.height : parent.welcome-size;
             background: Theme.bg-panel;
             clip: true;
             Welcome {
                 width: parent.width;
                 height: parent.height;
                 compact: true;
+                dock-edge: root.welcome-sidebar-dock;
                 sessions: root.sessions;
                 import-hint: root.ssh-import-hint;
                 collapse => {
                     root.welcome-collapsed = true;
                     root.set-welcome-collapsed(true);
+                }
+                dock-drag-move(ax, ay) => {
+                    root.panel-dragging = true;
+                    root.drag-nx = (ax - dock-area.absolute-position.x) / dock-area.width;
+                    root.drag-ny = (ay - dock-area.absolute-position.y) / dock-area.height;
+                }
+                dock-drag-end() => {
+                    if (root.dock-target != "") {
+                        root.welcome-sidebar-dock = root.dock-target;
+                        if (root.sidebar-dock == root.dock-target) {
+                            root.sidebar-collapsed = true;
+                            root.set-sidebar-collapsed(true);
+                        }
+                        root.persist-welcome-sidebar-dock(root.welcome-sidebar-dock);
+                    }
+                    root.panel-dragging = false;
                 }
                 new-session => { root.new-session-clicked(); }
                 import-ssh-config => { root.import-ssh-config(); }
@@ -828,19 +900,28 @@ export component AppWindow inherits Window {
                 remove-session(id) => { root.remove-session(id); }
             }
             Rectangle {
-                x: parent.width - 1px; width: 1px; height: parent.height;
+                x: root.welcome-sidebar-dock == "left" ? parent.width - 1px : 0px;
+                y: root.welcome-sidebar-dock == "top" ? parent.height - 1px : 0px;
+                width: root.welcome-sidebar-horizontal ? 1px : parent.width;
+                height: root.welcome-sidebar-horizontal ? parent.height : 1px;
                 background: Theme.border-subtle;
             }
         }
 
         // Drag the welcome sidebar's right edge to resize it (v0.5 M3b).
         if root.welcome-as-sidebar && !root.welcome-collapsed : Rectangle {
-            x: parent.strip-w + parent.welcome-w - 2px; y: 0;
-            width: 4px; height: parent.height;
+            x: root.welcome-sidebar-dock == "left" ? parent.sidebar-outside-strip + parent.welcome-size - 2px
+             : root.welcome-sidebar-dock == "right" ? parent.width - parent.sidebar-outside-strip - parent.welcome-size - 2px
+             : 0px;
+            y: root.welcome-sidebar-dock == "top" ? parent.sidebar-outside-strip + parent.welcome-size - 2px
+             : root.welcome-sidebar-dock == "bottom" ? parent.height - parent.sidebar-outside-strip - parent.welcome-size - 2px
+             : 0px;
+            width: parent.welcome-horizontal ? 4px : parent.width;
+            height: parent.welcome-horizontal ? parent.height : 4px;
             background: ws-split-ta.has-hover || dock-area.welcome-sidebar-dragging
                 ? Theme.accent : transparent;
             ws-split-ta := TouchArea {
-                mouse-cursor: ew-resize;
+                mouse-cursor: dock-area.welcome-horizontal ? ew-resize : ns-resize;
                 pointer-event(ev) => {
                     if (ev.kind == PointerEventKind.down) {
                         dock-area.welcome-sidebar-dragging = true;
@@ -851,10 +932,23 @@ export component AppWindow inherits Window {
                 }
                 moved => {
                     if (dock-area.welcome-sidebar-dragging) {
-                        root.welcome-sidebar-width = clamp(
-                            self.absolute-position.x + self.mouse-x
-                                - dock-area.absolute-position.x - dock-area.strip-w,
-                            160px, 480px);
+                        if (dock-area.welcome-horizontal) {
+                            root.welcome-sidebar-width = clamp(
+                                root.welcome-sidebar-dock == "right"
+                                    ? dock-area.absolute-position.x + dock-area.width
+                                        - (self.absolute-position.x + self.mouse-x)
+                                    : self.absolute-position.x + self.mouse-x
+                                        - dock-area.absolute-position.x,
+                                160px, 480px);
+                        } else {
+                            root.welcome-sidebar-width = clamp(
+                                root.welcome-sidebar-dock == "bottom"
+                                    ? dock-area.absolute-position.y + dock-area.height
+                                        - (self.absolute-position.y + self.mouse-y)
+                                    : self.absolute-position.y + self.mouse-y
+                                        - dock-area.absolute-position.y,
+                                120px, 360px);
+                        }
                     }
                 }
             }
@@ -863,8 +957,10 @@ export component AppWindow inherits Window {
         // Everything except the welcome strip/sidebar — the resource panel,
         // splitter and the central tab/pane content — sits to the right of them.
         rest := Rectangle {
-        x: parent.strip-w + parent.welcome-w; y: 0;
-        width: parent.width - parent.strip-w - parent.welcome-w; height: parent.height;
+        x: root.welcome-sidebar-dock == "left" ? parent.welcome-taken : 0px;
+        y: root.welcome-sidebar-dock == "top" ? parent.welcome-taken : 0px;
+        width: parent.welcome-horizontal ? parent.width - parent.welcome-taken : parent.width;
+        height: parent.welcome-horizontal ? parent.height : parent.height - parent.welcome-taken;
         // Sidebar extent along its docked axis. When collapsed it shrinks to the
         // 36px ToolStrip icon bar (M5) instead of 0 + a floating button; the 4px
         // splitter is gone while collapsed.
@@ -878,7 +974,7 @@ export component AppWindow inherits Window {
         // Only shown while expanded; collapsing swaps it for the ToolStrip icon
         // bar below (mirrors the welcome sidebar), so no clipped widgets bleed
         // through the 36px strip (#resource-collapse).
-        if !root.sidebar-collapsed : Sidebar {
+        if !root.sidebar-collapsed : Rectangle {
             x: root.sidebar-dock == "right" ? parent.width - parent.sb-w
              : 0px;
             y: root.sidebar-dock == "bottom" ? parent.height - parent.sb-h
@@ -886,6 +982,9 @@ export component AppWindow inherits Window {
             width: root.sidebar-horizontal ? parent.sb-w : parent.width;
             height: root.sidebar-horizontal ? parent.height : parent.sb-h;
             clip: true;
+            Sidebar {
+            width: parent.width;
+            height: parent.height;
             // Docked top/bottom → lay the resource widgets out in a row.
             lay-horizontal: !root.sidebar-horizontal;
             dock-edge: root.sidebar-dock;
@@ -924,23 +1023,38 @@ export component AppWindow inherits Window {
             dock-drag-end() => {
                 if (root.dock-target != "") {
                     root.sidebar-dock = root.dock-target;
+                    if (root.welcome-as-sidebar && root.welcome-sidebar-dock == root.dock-target) {
+                        root.welcome-collapsed = true;
+                        root.set-welcome-collapsed(true);
+                    }
                     root.persist-sidebar-dock(root.sidebar-dock);
                 }
                 root.panel-dragging = false;
             }
-            toggle-collapse() => { root.sidebar-collapsed = !root.sidebar-collapsed; }
+            toggle-collapse() => {
+                root.sidebar-collapsed = !root.sidebar-collapsed;
+                root.set-sidebar-collapsed(root.sidebar-collapsed);
+            }
+            }
         }
 
         // Collapsed resource panel → a ToolStrip icon bar at the same docked edge
         // (M5), in place of the old floating expand button.
-        if root.sidebar-collapsed : ToolStrip {
+        if root.sidebar-collapsed && !dock-area.combine-collapsed-tools && !dock-area.sidebar-strip-outside : ToolStrip {
             x: root.sidebar-dock == "right" ? parent.width - parent.sb-w : 0px;
             y: root.sidebar-dock == "bottom" ? parent.height - parent.sb-h : 0px;
             width: root.sidebar-horizontal ? parent.sb-w : parent.width;
             height: root.sidebar-horizontal ? parent.height : parent.sb-h;
             dock-edge: root.sidebar-dock;
             glyph: "\u{E871}";   // dashboard — resource panel
-            expand => { root.sidebar-collapsed = false; }
+            expand => {
+                root.sidebar-collapsed = false;
+                root.set-sidebar-collapsed(false);
+                if (root.welcome-as-sidebar && root.welcome-sidebar-dock == root.sidebar-dock) {
+                    root.welcome-collapsed = true;
+                    root.set-welcome-collapsed(true);
+                }
+            }
         }
 
         // Splitter — drag to resize the sidebar. Orientation + which dimension it
@@ -1025,6 +1139,7 @@ export component AppWindow inherits Window {
                     // Reserve room for the top-right toolbar icons that sit over
                     // this row so tabs don't slide underneath them (#122).
                     reserve-right: pane.reserve-right;
+                    show-new-tab: !root.welcome-as-sidebar;
                     tabs: pane.tabs;
                     active-id: pane.active-id;
                     tab-selected(id) => { root.pane-tab-selected(pane.id, id); }

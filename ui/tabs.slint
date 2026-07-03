@@ -156,6 +156,7 @@ component TabMenuItem inherits Rectangle {
 export component TabBar inherits Rectangle {
     in property <[TabInfo]> tabs;
     in property <string> active-id;
+    in property <bool> show-new-tab: true;
     // Keep this much clear on the right so tabs don't slide under the app's
     // top-right toolbar icons, which are positioned over the tab row (#122).
     in property <length> reserve-right: 0px;
@@ -216,7 +217,7 @@ export component TabBar inherits Rectangle {
                     drag-moved(ax, ay) => { root.tab-drag-move(tab.id, ax, ay); }
                     drag-dropped(ax, ay) => { root.tab-drag-drop(tab.id, ax, ay); }
                 }
-                IconButton {
+                if root.show-new-tab : IconButton {
                     glyph: "+";
                     size: 28px;
                     y: (parent.height - self.height) / 2;
