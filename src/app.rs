@@ -215,6 +215,37 @@ fn apply_window_chrome(window: &slint::Window) {
 #[cfg(not(windows))]
 fn apply_window_chrome(_window: &slint::Window) {}
 
+#[cfg(target_os = "linux")]
+fn schedule_slint_pointer_ungrab<T>(weak: slint::Weak<T>)
+where
+    T: slint::ComponentHandle + 'static,
+{
+    // Linux window managers/compositors may consume the release event after a
+    // system move/resize starts. If Slint keeps its press grab, the whole app
+    // can remain stuck in move/resize cursor mode. A few deferred synthetic
+    // releases cover Cinnamon/Mutter/KWin timing differences.
+    for delay_ms in [0_u64, 16, 80, 200] {
+        let weak2 = weak.clone();
+        slint::Timer::single_shot(std::time::Duration::from_millis(delay_ms), move || {
+            if let Some(w) = weak2.upgrade() {
+                let win = w.window();
+                win.dispatch_event(slint::platform::WindowEvent::PointerReleased {
+                    position: slint::LogicalPosition::new(-1.0, -1.0),
+                    button: slint::platform::PointerEventButton::Left,
+                });
+                win.dispatch_event(slint::platform::WindowEvent::PointerExited);
+            }
+        });
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn schedule_slint_pointer_ungrab<T>(_weak: slint::Weak<T>)
+where
+    T: slint::ComponentHandle + 'static,
+{
+}
+
 /// macOS-only: install a custom winit backend that makes the native title bar
 /// transparent and lets the window content render *under* it (fullSizeContentView).
 /// The title bar then picks up the app's dark theme / wallpaper (`Theme.window-base`)
@@ -339,6 +370,7 @@ pub fn run() -> Result<()> {
                 w.window().with_winit_window(|ww| {
                     let _ = ww.drag_window();
                 });
+                schedule_slint_pointer_ungrab(weak.clone());
             }
         });
     }
@@ -351,21 +383,7 @@ pub fn run() -> Result<()> {
                 w.window().with_winit_window(|ww| {
                     let _ = ww.drag_resize_window(ResizeDirection::SouthEast);
                 });
-                // Drop Slint's pointer grab after the WM takes over, deferred to the
-                // next event-loop turn (see #159 in the main window's on_win_resize).
-                if cfg!(target_os = "linux") {
-                    let weak2 = weak.clone();
-                    slint::Timer::single_shot(std::time::Duration::from_millis(0), move || {
-                        if let Some(w) = weak2.upgrade() {
-                            let win = w.window();
-                            win.dispatch_event(slint::platform::WindowEvent::PointerReleased {
-                                position: slint::LogicalPosition::new(0.0, 0.0),
-                                button: slint::platform::PointerEventButton::Left,
-                            });
-                            win.dispatch_event(slint::platform::WindowEvent::PointerExited);
-                        }
-                    });
-                }
+                schedule_slint_pointer_ungrab(weak.clone());
             }
         });
     }
@@ -1327,7 +1345,7 @@ pub fn run() -> Result<()> {
             match event {
                 WEvent::DroppedFile(path) => {
                     if let Some(win) = weak.upgrade() {
-                        handle_file_drop(&win, &sh, path.to_string_lossy().to_string());
+                        handle_file_drop(&win, &sh, path.clone());
                     }
                 }
                 WEvent::Focused(f) => {
@@ -1433,6 +1451,7 @@ pub fn run() -> Result<()> {
                 w.window().with_winit_window(|ww| {
                     let _ = ww.drag_window();
                 });
+                schedule_slint_pointer_ungrab(weak.clone());
             }
         });
     }
@@ -1454,31 +1473,7 @@ pub fn run() -> Result<()> {
                 w.window().with_winit_window(|ww| {
                     let _ = ww.drag_resize_window(d);
                 });
-                // On Linux the window manager / Wayland compositor takes over the
-                // resize and consumes the button-release that ends it (winit ungrabs
-                // + hands off via _NET_WM_MOVERESIZE / xdg_toplevel.resize), so Slint
-                // never sees the release and keeps its pointer grab on the resize
-                // handle — afterwards the cursor stays a resize-arrow and a click
-                // *anywhere* re-starts a resize (#159). Synthesize a release + exit
-                // so Slint drops the grab. It must be DEFERRED: Slint establishes the
-                // press grab while processing this very pointer event, so a release
-                // dispatched synchronously here is too early. A 0 ms single-shot runs
-                // on the next event-loop turn, once the grab is in place. Windows/
-                // macOS deliver the release natively; the runtime cfg! gate keeps
-                // this compiling (and a no-op) there.
-                if cfg!(target_os = "linux") {
-                    let weak2 = weak.clone();
-                    slint::Timer::single_shot(std::time::Duration::from_millis(0), move || {
-                        if let Some(w) = weak2.upgrade() {
-                            let win = w.window();
-                            win.dispatch_event(slint::platform::WindowEvent::PointerReleased {
-                                position: slint::LogicalPosition::new(0.0, 0.0),
-                                button: slint::platform::PointerEventButton::Left,
-                            });
-                            win.dispatch_event(slint::platform::WindowEvent::PointerExited);
-                        }
-                    });
-                }
+                schedule_slint_pointer_ungrab(weak.clone());
             }
         });
     }
@@ -1568,7 +1563,7 @@ fn cursor_pos() -> Option<(i32, i32)> {
 /// Handle an OS file drop: if it landed over the SFTP file-list area of the
 /// active session tab, upload the file to that tab's current remote directory.
 #[cfg(windows)]
-fn handle_file_drop(win: &AppWindow, sftp_handles: &SftpHandles, path: String) {
+fn handle_file_drop(win: &AppWindow, sftp_handles: &SftpHandles, path: std::path::PathBuf) {
     let active = win.get_active_tab_id().to_string();
     if active == "welcome" {
         return;
@@ -1632,7 +1627,7 @@ fn handle_file_drop(win: &AppWindow, sftp_handles: &SftpHandles, path: String) {
 }
 
 #[cfg(not(windows))]
-fn handle_file_drop(_win: &AppWindow, _sftp_handles: &SftpHandles, _path: String) {}
+fn handle_file_drop(_win: &AppWindow, _sftp_handles: &SftpHandles, _path: std::path::PathBuf) {}
 
 // ---------------------------------------------------------------------------
 // Model helpers
@@ -4962,19 +4957,15 @@ fn wire_sftp_callbacks(
                     // The remote SFTP upload handles a file or a whole directory;
                     // only the local picker differs (#85). Folder uploads one dir;
                     // file mode allows selecting several at once.
-                    let locals: Vec<String> = if folder {
+                    let locals: Vec<std::path::PathBuf> = if folder {
                         rfd::FileDialog::new()
                             .pick_folder()
-                            .map(|p| vec![p.to_string_lossy().to_string()])
+                            .map(|p| vec![p])
                             .unwrap_or_default()
                     } else {
                         rfd::FileDialog::new()
                             .pick_files()
-                            .map(|v| {
-                                v.into_iter()
-                                    .map(|p| p.to_string_lossy().to_string())
-                                    .collect()
-                            })
+                            .map(|v| v.into_iter().collect())
                             .unwrap_or_default()
                     };
                     if locals.is_empty() {

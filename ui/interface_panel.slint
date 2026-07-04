@@ -187,7 +187,7 @@ export component InterfacePanel inherits Rectangle {
     in-out property <bool> download-always-ask;
     in-out property <bool> welcome-as-sidebar;
     in-out property <bool> update-check-enabled;
-    in-out property <float> wallpaper-overlay;   // frosted-panel opacity 0.40–1.00
+    in-out property <float> wallpaper-overlay;   // frosted-panel opacity 0.30-1.00
     // Active wallpaper id: "" / "builtin:light" / "builtin:dark" / a file path.
     in property <string> current-wallpaper;
     in property <string> custom-wallpaper-name;   // basename for the file row
@@ -532,8 +532,7 @@ export component InterfacePanel inherits Rectangle {
                         Slider {
                             width: 150px;
                             minimum: 0;
-                            // Up to 70% transparency (overlay floor 0.30) so the
-                            // 0.38 default (62%) and more see-through panels fit.
+                            // Up to 70% transparency (overlay floor 0.30).
                             maximum: 70;
                             value: (1.0 - root.wallpaper-overlay) * 100;
                             changed(v) => { root.wallpaper-overlay = 1.0 - v / 100; }

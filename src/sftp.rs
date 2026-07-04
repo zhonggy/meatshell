@@ -10,7 +10,7 @@
 //! terminal tab.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -64,7 +64,7 @@ pub enum SftpCommand {
     /// (and any remote temp archive) are cleaned up.
     CancelTransfer(String),
     /// Upload a local file into a remote directory.
-    Upload { local: String, remote_dir: String },
+    Upload { local: PathBuf, remote_dir: String },
     /// Delete a remote file (falls back to removing an empty directory).
     Delete(String),
     /// Download a file to a temp dir and open it with the OS default app
@@ -116,7 +116,7 @@ impl SftpHandle {
     pub fn cancel_transfer(&self, id: String) {
         let _ = self.commands.send(SftpCommand::CancelTransfer(id));
     }
-    pub fn upload(&self, local: String, remote_dir: String) {
+    pub fn upload(&self, local: PathBuf, remote_dir: String) {
         let _ = self
             .commands
             .send(SftpCommand::Upload { local, remote_dir });
@@ -714,7 +714,17 @@ async fn run_sftp(
                     .map(|m| m.is_dir())
                     .unwrap_or(false);
                 if is_dir {
-                    let dirname = base_name(&local);
+                    let dirname = match local_file_name_utf8(&local) {
+                        Ok(name) => name,
+                        Err(e) => {
+                            let _ = events.send(SessionEvent::SftpStatus(format!(
+                                "{}: {e}",
+                                t("上传失败", "Upload failed")
+                            )));
+                            cancels_done.lock().unwrap().remove(&up_id);
+                            return;
+                        }
+                    };
                     let _ = events.send(SessionEvent::SftpStatus(format!(
                         "{} {}/...", t("上传文件夹", "Uploading folder"), dirname
                     )));
@@ -738,7 +748,17 @@ async fn run_sftp(
                         }
                     }
                 } else {
-                    let filename = base_name(&local);
+                    let filename = match local_file_name_utf8(&local) {
+                        Ok(name) => name,
+                        Err(e) => {
+                            let _ = events.send(SessionEvent::SftpStatus(format!(
+                                "{}: {e}",
+                                t("上传失败", "Upload failed")
+                            )));
+                            cancels_done.lock().unwrap().remove(&up_id);
+                            return;
+                        }
+                    };
                     let remote_path = format!("{}/{}", remote_dir.trim_end_matches('/'), filename);
                     let id = up_id.clone();
                     let _ = events.send(SessionEvent::SftpStatus(format!("{} {}...", t("上传", "Uploading"), filename)));
@@ -1089,6 +1109,13 @@ fn base_name(path: &str) -> String {
         .to_string()
 }
 
+fn local_file_name_utf8(path: &Path) -> Result<String> {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| anyhow!("local file name is not valid UTF-8: {}", path.display()))
+}
+
 /// Single-quote a string for safe interpolation into a remote `/bin/sh`
 /// command. Remote names come from the *server's* listing and are therefore
 /// untrusted — without quoting, a crafted name like `; rm -rf ~` would run.
@@ -1237,7 +1264,7 @@ fn spawn_edit_watcher(
             if cur.is_some() && cur != last {
                 last = cur;
                 let _ = self_tx.send(SftpCommand::Upload {
-                    local: local.clone(),
+                    local: PathBuf::from(&local),
                     remote_dir: remote_dir.clone(),
                 });
                 let _ = events.send(SessionEvent::SftpStatus(format!(
@@ -1588,25 +1615,25 @@ async fn remove_dir_recursive(sftp: &SftpSession, root: &str) -> Result<()> {
 async fn upload_dir(
     handle: &client::Handle<SftpClientHandler>,
     sftp: &SftpSession,
-    local_root: &str,
+    local_root: &Path,
     remote_parent: &str,
     events: &UnboundedSender<SessionEvent>,
 ) -> Result<()> {
     // Folder uploads aren't individually cancellable from the UI; a throwaway
     // never-set flag satisfies upload_pipelined's signature.
     let no_cancel = Arc::new(AtomicBool::new(false));
-    let root_name = base_name(local_root);
+    let root_name = local_file_name_utf8(local_root)?;
     let remote_root = format!("{}/{}", remote_parent.trim_end_matches('/'), root_name);
-    let mut stack = vec![(local_root.to_string(), remote_root)];
+    let mut stack = vec![(local_root.to_path_buf(), remote_root)];
     while let Some((ldir, rdir)) = stack.pop() {
         // Best-effort mkdir; an error usually just means the dir already exists.
         let _ = sftp.create_dir(&rdir).await;
         let mut rd = tokio::fs::read_dir(&ldir)
             .await
-            .with_context(|| format!("read local dir {ldir}"))?;
+            .with_context(|| format!("read local dir {}", ldir.display()))?;
         while let Some(entry) = rd.next_entry().await.context("read dir entry")? {
-            let name = entry.file_name().to_string_lossy().to_string();
-            let lpath = entry.path().to_string_lossy().to_string();
+            let lpath = entry.path();
+            let name = local_file_name_utf8(&lpath)?;
             let rchild = format!("{}/{}", rdir, name);
             let ft = entry.file_type().await.context("file type")?;
             if ft.is_dir() {
@@ -1631,7 +1658,7 @@ async fn upload_dir(
 /// native scp.
 async fn upload_pipelined(
     handle: &client::Handle<SftpClientHandler>,
-    local: &str,
+    local: &Path,
     remote: &str,
     name: &str,
     id: &str,
@@ -1649,7 +1676,7 @@ async fn upload_pipelined(
         .unwrap_or(0);
     let mut local_file = tokio::fs::File::open(local)
         .await
-        .with_context(|| format!("open local {local}"))?;
+        .with_context(|| format!("open local {}", local.display()))?;
 
     // Dedicated raw SFTP channel for the transfer (keeps the browse session
     // responsive and lets us issue concurrent WRITE requests).

@@ -313,7 +313,9 @@ export component AppWindow inherits Window {
             ? root.welcome-sidebar-taken
             : 0px);
     property <length> toolbar-y-off:
-        (root.sidebar-dock == "top" && !root.sidebar-collapsed ? root.sidebar-height + 4px : 0px)
+        (root.sidebar-dock == "top"
+            ? (root.sidebar-collapsed ? 36px : root.sidebar-height + 4px)
+            : 0px)
         + ((root.welcome-as-sidebar && root.welcome-sidebar-dock == "top")
             ? root.welcome-sidebar-taken
             : 0px);
@@ -1529,6 +1531,7 @@ export component AppWindow inherits Window {
             }
             Rectangle {
                 width: 68px; height: 26px;
+                y: (parent.height - self.height) / 2;
                 border-radius: Theme.radius-sm;
                 background: upd-dl-ta.has-hover ? #ffffff45 : #ffffff28;
                 upd-dl-ta := TouchArea {
@@ -1540,6 +1543,7 @@ export component AppWindow inherits Window {
             }
             Rectangle {
                 width: 26px; height: 26px;
+                y: (parent.height - self.height) / 2;
                 border-radius: Theme.radius-sm;
                 background: upd-cl-ta.has-hover ? #ffffff45 : transparent;
                 upd-cl-ta := TouchArea {

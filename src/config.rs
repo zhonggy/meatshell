@@ -269,18 +269,21 @@ fn default_wallpaper() -> String {
 }
 
 /// Bump when `migrate_defaults` gains a new one-time default-layout change.
-pub const DEFAULTS_REV: u32 = 1;
+pub const DEFAULTS_REV: u32 = 2;
+
+const DEFAULT_WALLPAPER_TRANSPARENCY: f32 = 0.38;
+const DEFAULT_WALLPAPER_OVERLAY: f32 = 1.0 - DEFAULT_WALLPAPER_TRANSPARENCY;
 
 /// A brand-new config (no file yet, or the old one was corrupt). Seeds the
 /// new-user default layout (#new-user-defaults): miku wallpaper, welcome page as
-/// a left sidebar, resource panel docked right, a 0.38 wallpaper overlay — and
+/// a left sidebar, resource panel docked right, 38% wallpaper transparency, and
 /// marks the migration done so it isn't re-applied.
 fn fresh_config() -> ConfigFile {
     ConfigFile {
         wallpaper: "builtin:miku".to_string(),
         welcome_as_sidebar: true,
         sidebar_dock: "right".to_string(),
-        wallpaper_overlay: 0.38,
+        wallpaper_overlay: DEFAULT_WALLPAPER_OVERLAY,
         defaults_rev: DEFAULTS_REV,
         ..ConfigFile::default()
     }
@@ -294,16 +297,16 @@ fn migrate_defaults(cfg: &mut ConfigFile) -> bool {
     if cfg.defaults_rev >= DEFAULTS_REV {
         return false;
     }
-    // rev 1: miku / welcome-as-sidebar / right-docked resources / 0.38 overlay.
+    // rev 1: miku / welcome-as-sidebar / right-docked resources / wallpaper overlay.
     if cfg.defaults_rev < 1 {
         // Old default wallpaper → miku. A custom path, "none" (""), or any other
         // built-in means the user chose it, so leave it.
         if cfg.wallpaper == "builtin:tech" {
             cfg.wallpaper = "builtin:miku".to_string();
         }
-        // Overlay still unset (0 = "use the 0.86 default") → 0.38.
+        // Overlay still unset (0 = "use the 0.86 default") -> v0.5 default.
         if cfg.wallpaper_overlay <= 0.0 {
-            cfg.wallpaper_overlay = 0.38;
+            cfg.wallpaper_overlay = DEFAULT_WALLPAPER_OVERLAY;
         }
         // Never enabled the welcome sidebar → enable it.
         if !cfg.welcome_as_sidebar {
@@ -313,6 +316,13 @@ fn migrate_defaults(cfg: &mut ConfigFile) -> bool {
         if cfg.sidebar_dock.trim().is_empty() {
             cfg.sidebar_dock = "right".to_string();
         }
+    }
+    // rev 2: settings show wallpaper transparency, while rev 1 accidentally
+    // stored the default as panel alpha 0.38, so it displayed as ~62%.
+    if cfg.defaults_rev < 2
+        && (cfg.wallpaper_overlay - DEFAULT_WALLPAPER_TRANSPARENCY).abs() < 0.005
+    {
+        cfg.wallpaper_overlay = DEFAULT_WALLPAPER_OVERLAY;
     }
     cfg.defaults_rev = DEFAULTS_REV;
     true
@@ -607,7 +617,7 @@ pub struct ConfigFile {
     /// One-time default-layout migration marker (#new-user-defaults). 0 = config
     /// predates the migration. `migrate_defaults` bumps it to `DEFAULTS_REV` after
     /// pushing the new look (miku wallpaper / welcome-as-sidebar / right-docked
-    /// resource panel / 0.38 overlay) to users still sitting on the old defaults.
+    /// resource panel / wallpaper overlay) to users still sitting on old defaults.
     #[serde(default)]
     pub defaults_rev: u32,
 }
@@ -1090,8 +1100,7 @@ impl ConfigStore {
     }
     pub fn wallpaper_overlay(&self) -> f32 {
         let a = self.cache.wallpaper_overlay;
-        // Floor lowered 0.40 → 0.30 so the new 0.38 default (and more see-through
-        // panels) is reachable (#new-user-defaults).
+        // Floor lowered 0.40 -> 0.30 so more see-through panels are reachable.
         if a <= 0.0 { 0.86 } else { a.clamp(0.30, 1.0) }
     }
     pub fn set_wallpaper_overlay(&mut self, v: f32) {
