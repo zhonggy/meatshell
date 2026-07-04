@@ -19,6 +19,8 @@ export struct SessionDraft {
     auth: string,      // "password" | "key"
     password: string,
     private-key-path: string,
+    private-key-inline: string,
+    private-key-inline-mode: bool,
     proxy: string,     // "" | "socks5://host:port" | "http://host:port"
     group: string,     // folder/group name ("" = ungrouped)
     // Serial-only (ignored unless kind == "serial")
@@ -210,6 +212,8 @@ export component SessionDialog inherits Rectangle {
     in-out property <string> draft-auth: "password";
     in-out property <string> draft-password;
     in-out property <string> draft-key-path;
+    in-out property <string> draft-key-inline;
+    in-out property <bool> draft-key-inline-mode: false;
     in-out property <string> draft-proxy-type: "none";  // "none" | "socks5" | "http"
     in-out property <string> draft-proxy-hostport;
     in-out property <string> draft-group;
@@ -402,10 +406,25 @@ export component SessionDialog inherits Rectangle {
             if root.draft-kind == "ssh" && root.draft-auth == "key" : VerticalLayout {
                 spacing: 4px;
                 Text {
-                    text: @tr("Private key file");
+                    text: @tr("Private key");
                     color: Theme.text-secondary;
                     font-size: Theme.fs-sm;
                 }
+                HorizontalLayout {
+                    spacing: 6px;
+                    SegOption {
+                        label: @tr("Private key file");
+                        active: !root.draft-key-inline-mode;
+                        clicked => { root.draft-key-inline-mode = false; }
+                    }
+                    SegOption {
+                        label: @tr("Paste private key");
+                        active: root.draft-key-inline-mode;
+                        clicked => { root.draft-key-inline-mode = true; }
+                    }
+                }
+                if !root.draft-key-inline-mode : VerticalLayout {
+                    spacing: 4px;
                 HorizontalLayout {
                     spacing: 8px;
                     Rectangle {
@@ -458,6 +477,44 @@ export component SessionDialog inherits Rectangle {
                     text: @tr("Pick the private key itself (not the .pub public key)");
                     color: Theme.text-muted;
                     font-size: Theme.fs-xs;
+                }
+                }
+                if root.draft-key-inline-mode : VerticalLayout {
+                    spacing: 4px;
+                    Rectangle {
+                        height: 118px;
+                        horizontal-stretch: 1;
+                        border-radius: Theme.radius-sm;
+                        border-width: 1px;
+                        border-color: keytext.has-focus ? Theme.accent : Theme.border-subtle;
+                        background: Theme.bg-root;
+                        keytext := TextInput {
+                            x: 10px;
+                            y: 8px;
+                            width: parent.width - 20px;
+                            height: parent.height - 16px;
+                            text <=> root.draft-key-inline;
+                            color: Theme.text-primary;
+                            font-family: Theme.font-mono;
+                            font-size: Theme.fs-sm;
+                            single-line: false;
+                            wrap: word-wrap;
+                        }
+                        if root.draft-key-inline == "" : Text {
+                            x: 10px;
+                            y: 8px;
+                            width: parent.width - 20px;
+                            text: "-----BEGIN OPENSSH PRIVATE KEY-----";
+                            color: Theme.text-muted;
+                            font-family: Theme.font-mono;
+                            font-size: Theme.fs-sm;
+                        }
+                    }
+                    Text {
+                        text: @tr("Private key content is encrypted before saving.");
+                        color: Theme.text-muted;
+                        font-size: Theme.fs-xs;
+                    }
                 }
             }
 
@@ -731,6 +788,8 @@ export component SessionDialog inherits Rectangle {
                             auth: root.draft-auth,
                             password: root.draft-password,
                             private-key-path: root.draft-key-path,
+                            private-key-inline: root.draft-key-inline,
+                            private-key-inline-mode: root.draft-key-inline-mode,
                             proxy: (root.draft-proxy-type == "none" || root.draft-proxy-hostport == "") ? ""
                                  : root.draft-proxy-type == "http" ? "http://" + root.draft-proxy-hostport
                                  : "socks5://" + root.draft-proxy-hostport,

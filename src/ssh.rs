@@ -11,7 +11,7 @@ use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use russh::client::{self, Handle, Handler, Msg};
 use russh::keys::key::PrivateKeyWithHashAlg;
-use russh::keys::load_secret_key;
+use russh::keys::{decode_secret_key, load_secret_key, PrivateKey};
 use russh::{Channel, ChannelId, ChannelMsg, Disconnect};
 use ssh_key::{HashAlg, PublicKey};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
@@ -48,6 +48,30 @@ pub struct RemoteTreeNode {
     pub depth: u32,
     pub expanded: bool,
     pub has_children: bool,
+}
+
+pub(crate) fn load_session_private_key(session: &Session, pass: &str) -> Result<PrivateKey> {
+    let pass = if pass.is_empty() { None } else { Some(pass) };
+    let inline = session.private_key_inline.as_str().trim();
+    if !inline.is_empty() {
+        return decode_secret_key(inline, pass).context("failed to parse pasted private key");
+    }
+
+    let raw = session.private_key_path.trim();
+    if raw.is_empty() {
+        return Err(anyhow!(t(
+            "私钥路径或私钥内容为空",
+            "private key path or private key content is empty"
+        )));
+    }
+
+    let normalised = raw.replace('\\', "/");
+    let key_path = normalised
+        .strip_suffix(".pub")
+        .map(str::to_string)
+        .unwrap_or(normalised);
+    load_secret_key(Path::new(&key_path), pass)
+        .with_context(|| format!("failed to load key {key_path}"))
 }
 
 /// Format a byte count as a human-readable string.
@@ -674,26 +698,10 @@ async fn run_session(
             ok
         }
         AuthMethod::Key => {
-            let raw = session.private_key_path.trim();
-            if raw.is_empty() {
-                return Err(anyhow!(t("私钥路径为空", "private key path is empty")));
-            }
-            // Normalise separators (we store `/` everywhere) and be forgiving if
-            // the user pointed at the `.pub` *public* key — the private key is the
-            // same path without that suffix.
-            let normalised = raw.replace('\\', "/");
-            let key_path = normalised
-                .strip_suffix(".pub")
-                .map(str::to_string)
-                .unwrap_or(normalised);
             // An encrypted private key needs its passphrase; we reuse the
             // session's password field for it (empty = unencrypted key) (#90).
             let pass = password.as_str();
-            let keypair = load_secret_key(
-                Path::new(&key_path),
-                if pass.is_empty() { None } else { Some(pass) },
-            )
-            .with_context(|| format!("failed to load key {key_path}"))?;
+            let keypair = load_session_private_key(&session, pass)?;
             // RSA keys must be signed with an explicit SHA-2 hash; every other
             // key type carries its own algorithm, so no override is needed.
             let hash = keypair.algorithm().is_rsa().then_some(HashAlg::Sha256);

@@ -1,5 +1,6 @@
 import { Theme } from "theme.slint";
 import { ScrollView } from "std-widgets.slint";
+import { TabInfo } from "tabs.slint";
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -57,6 +58,8 @@ export component SftpPanel inherits Rectangle {
     in property <string>  status: @tr("SFTP not connected");
     in property <bool>    loading: false;
     in property <[SftpTreeNode]> tree-nodes: [];
+    in property <string> current-tab-id;
+    in property <[TabInfo]> transfer-targets: [];
     in property <bool> collapsed: false;   // when true only the toolbar shows
     in property <bool> show-tree: true;    // hide the directory tree when narrow (#dock)
     in property <bool> compact: false;     // side-docked + collapsed → render nothing but a clean strip (#dock)
@@ -93,6 +96,8 @@ export component SftpPanel inherits Rectangle {
     callback toggle-select(int);    // toggle a row's multi-select checkbox (#100)
     callback download-selected();   // download all checked entries (#100)
     callback delete-selected();     // delete all checked entries (#100)
+    callback copy-to-target(string /* path */, string /* target tab */);
+    callback copy-selected-to-target(string /* target tab */);
     callback view(string);          // open read-only in the built-in viewer
     callback edit(string);          // open writable in the built-in editor
     callback open-external(string);     // open with the OS default app (#81)
@@ -583,11 +588,43 @@ export component SftpPanel inherits Rectangle {
                     // One context menu for the whole list (#84). Item actions are
                     // enabled only when an item was right-clicked (menu-target set);
                     // new/refresh are always available.
+                    copy-target-menu := PopupWindow {
+                        x: root.menu-x + 148px;
+                        y: root.menu-y;
+                        width: 148px;
+                        height: max(1, root.transfer-targets.length) * 27px + 8px;
+                        Rectangle {
+                            background: Theme.bg-panel;
+                            border-radius: Theme.radius-sm;
+                            border-width: 1px;
+                            border-color: Theme.border-strong;
+                            drop-shadow-blur: 12px;
+                            drop-shadow-color: #00000060;
+                            VerticalLayout {
+                                padding: 4px;
+                                spacing: 1px;
+                                for target in root.transfer-targets : SftpMenuItem {
+                                    label: target.title;
+                                    enabled: target.kind == "terminal" && target.connected && target.id != root.current-tab-id;
+                                    clicked => {
+                                        if (root.selected-count >= 2) {
+                                            root.copy-selected-to-target(target.id);
+                                        } else if (root.menu-target != "") {
+                                            root.copy-to-target(root.menu-target, target.id);
+                                        } else {
+                                            root.copy-selected-to-target(target.id);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     file-menu := PopupWindow {
                         x: root.menu-x;
                         y: root.menu-y;
                         width: 148px;
-                        height: 12 * 27px + 8px;
+                        height: 13 * 27px + 8px;
                         Rectangle {
                             background: Theme.bg-panel;
                             border-radius: Theme.radius-sm;
@@ -637,6 +674,11 @@ export component SftpPanel inherits Rectangle {
                                     label: @tr("Copy path");
                                     enabled: root.menu-target != "";
                                     clicked => { root.copy-path(root.menu-target); }
+                                }
+                                SftpMenuItem {
+                                    label: @tr("Copy to session...");
+                                    enabled: (root.menu-target != "" || root.selected-count > 0) && root.transfer-targets.length > 1;
+                                    clicked => { copy-target-menu.show(); }
                                 }
                                 SftpMenuItem {
                                     label: @tr("Delete");

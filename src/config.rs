@@ -382,6 +382,8 @@ pub struct Session {
     pub password: Secret,
     #[serde(default)]
     pub private_key_path: String,
+    #[serde(default)]
+    pub private_key_inline: Secret,
     /// Optional outbound proxy, e.g. "socks5://127.0.0.1:1080" or
     /// "http://user:pass@host:8080". Empty = use $ALL_PROXY, else direct.
     #[serde(default)]
@@ -464,6 +466,7 @@ impl Session {
             auth: AuthMethod::Password,
             password: Secret::default(),
             private_key_path: String::new(),
+            private_key_inline: Secret::default(),
             proxy: String::new(),
             last_used: None,
             group: String::new(),
@@ -783,6 +786,11 @@ impl ConfigStore {
                     for session in &mut cfg.sessions {
                         if let Some(plain) = Self::try_decrypt(&key, session.password.as_str()) {
                             session.password = Secret::new(plain);
+                        }
+                        if let Some(plain) =
+                            Self::try_decrypt(&key, session.private_key_inline.as_str())
+                        {
+                            session.private_key_inline = Secret::new(plain);
                         }
                     }
                     if let Some(plain) = Self::try_decrypt(&key, cfg.webdav_password.as_str()) {
@@ -1328,6 +1336,15 @@ impl ConfigStore {
                 let enc = Self::encrypt(&self.key, session.password.as_str())?;
                 session.password = Secret::new(enc);
             }
+            if !session.private_key_inline.is_empty()
+                && !session
+                    .private_key_inline
+                    .as_str()
+                    .starts_with(Self::ENC_PREFIX)
+            {
+                let enc = Self::encrypt(&self.key, session.private_key_inline.as_str())?;
+                session.private_key_inline = Secret::new(enc);
+            }
         }
         if !disk.webdav_password.is_empty()
             && !disk.webdav_password.as_str().starts_with(Self::ENC_PREFIX)
@@ -1400,6 +1417,10 @@ impl ConfigStore {
                 let enc = Self::encrypt_export(s.password.as_str())?;
                 s.password = Secret::new(enc);
             }
+            if !s.private_key_inline.is_empty() {
+                let enc = Self::encrypt_export(s.private_key_inline.as_str())?;
+                s.private_key_inline = Secret::new(enc);
+            }
             // `last_used` is machine-local noise — don't carry it across.
             s.last_used = None;
         }
@@ -1431,6 +1452,12 @@ impl ConfigStore {
                 s.password = Secret::new(plain);
             } else if let Some(plain) = Self::try_decrypt(&self.key, s.password.as_str()) {
                 s.password = Secret::new(plain);
+            }
+            if let Some(plain) = Self::decrypt_export(s.private_key_inline.as_str()) {
+                s.private_key_inline = Secret::new(plain);
+            } else if let Some(plain) = Self::try_decrypt(&self.key, s.private_key_inline.as_str())
+            {
+                s.private_key_inline = Secret::new(plain);
             }
             let dup = self.cache.sessions.iter().any(|x| {
                 x.host == s.host && x.user == s.user && x.port == s.port && x.kind == s.kind

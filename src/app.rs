@@ -2023,6 +2023,8 @@ fn wire_session_callbacks(
             w.set_dialog_auth("password".into());
             w.set_dialog_password("".into());
             w.set_dialog_key_path("".into());
+            w.set_dialog_key_inline("".into());
+            w.set_dialog_key_inline_mode(false);
             w.set_dialog_proxy_type("none".into());
             w.set_dialog_proxy_hostport("".into());
             w.set_dialog_group("".into());
@@ -2225,6 +2227,8 @@ fn wire_session_callbacks(
                 // leave it blank; a blank field on save keeps the existing one.
                 w.set_dialog_password("".into());
                 w.set_dialog_key_path(session.private_key_path.clone().into());
+                w.set_dialog_key_inline("".into());
+                w.set_dialog_key_inline_mode(!session.private_key_inline.is_empty());
                 let (proxy_type, proxy_hostport) = split_proxy(&session.proxy);
                 w.set_dialog_proxy_type(proxy_type.into());
                 w.set_dialog_proxy_hostport(proxy_hostport.into());
@@ -2417,6 +2421,24 @@ fn wire_session_callbacks(
             } else {
                 Secret::new(draft.password.to_string())
             };
+            let private_key_inline = if draft.private_key_inline_mode {
+                if draft.private_key_inline.is_empty() {
+                    store
+                        .borrow()
+                        .get(&id)
+                        .map(|s| s.private_key_inline.clone())
+                        .unwrap_or_default()
+                } else {
+                    Secret::new(draft.private_key_inline.to_string())
+                }
+            } else {
+                Secret::default()
+            };
+            let private_key_path = if draft.private_key_inline_mode {
+                String::new()
+            } else {
+                draft.private_key_path.to_string().replace('\\', "/")
+            };
             let kind = crate::config::SessionKind::from_str(&draft.kind.to_string());
             // Auto-name: serial → port label; otherwise user@host, or just the
             // host when no username was given (#110).
@@ -2450,7 +2472,8 @@ fn wire_session_callbacks(
                 auth: AuthMethod::from_str(&draft.auth.to_string()),
                 password,
                 // Store the key path with forward slashes uniformly.
-                private_key_path: draft.private_key_path.to_string().replace('\\', "/"),
+                private_key_path,
+                private_key_inline,
                 proxy: draft.proxy.to_string(),
                 last_used: None,
                 group: draft.group.to_string(),
@@ -5402,6 +5425,68 @@ fn wire_sftp_callbacks(window: &AppWindow, sftp_handles: SftpHandles, sftp_last_
 
     // Context menu → 查看 (read-only) / 编辑 (editable). Both load the file's
     // text into the built-in editor instead of an external app (#70).
+    // SFTP remote-to-remote copy (#203): stage through a local temp directory,
+    // then upload into the target session's current SFTP directory.
+    {
+        let sftp_handles = sftp_handles.clone();
+        let weak = window.as_weak();
+        window.on_sftp_copy_to_target(
+            move |tab_id: SharedString, remote_path: SharedString, target_id: SharedString| {
+                let Some(w) = weak.upgrade() else { return };
+                let paths = vec![remote_path.to_string()];
+                let dirs = terminal_sftp_paths(&w);
+                let target_dir = dirs
+                    .get(target_id.as_str())
+                    .cloned()
+                    .filter(|d| !d.is_empty())
+                    .unwrap_or_else(|| "/".to_string());
+                if let Ok(handles) = sftp_handles.lock() {
+                    let Some(src) = handles.get(tab_id.as_str()) else {
+                        return;
+                    };
+                    let Some(dst) = handles.get(target_id.as_str()) else {
+                        return;
+                    };
+                    src.copy_to(paths, dst.commands.clone(), target_dir);
+                    w.set_download_open(true);
+                }
+            },
+        );
+    }
+    {
+        let sftp_handles = sftp_handles.clone();
+        let weak = window.as_weak();
+        window.on_sftp_copy_selected_to_target(
+            move |tab_id: SharedString, target_id: SharedString| {
+                let Some(w) = weak.upgrade() else { return };
+                let terminals = w.get_terminals();
+                let Some(tm) = terminals.as_any().downcast_ref::<VecModel<TerminalState>>() else {
+                    return;
+                };
+                let paths = collect_sftp_selected(tm, tab_id.as_str());
+                if paths.is_empty() {
+                    return;
+                }
+                let dirs = terminal_sftp_paths(&w);
+                let target_dir = dirs
+                    .get(target_id.as_str())
+                    .cloned()
+                    .filter(|d| !d.is_empty())
+                    .unwrap_or_else(|| "/".to_string());
+                if let Ok(handles) = sftp_handles.lock() {
+                    let Some(src) = handles.get(tab_id.as_str()) else {
+                        return;
+                    };
+                    let Some(dst) = handles.get(target_id.as_str()) else {
+                        return;
+                    };
+                    src.copy_to(paths, dst.commands.clone(), target_dir);
+                    w.set_download_open(true);
+                }
+                clear_sftp_selection(tm, tab_id.as_str());
+            },
+        );
+    }
     {
         let sftp_handles = sftp_handles.clone();
         window.on_sftp_view(move |tab_id: SharedString, path: SharedString| {
