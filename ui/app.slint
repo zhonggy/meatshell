@@ -2034,8 +2034,9 @@ export component AppWindow inherits Window {
         clicked => { root.quick-cmd-open = false; }
     }
     Rectangle {
-        // Align left edge with the quick-cmd button (154px from right).
-        x: parent.width - 154px - root.toolbar-x-off;
+        // Right-align the panel with the quick-cmd button: button is at
+        // (width - 154px), panel is 360px wide → left edge at (width - 154 - 360).
+        x: parent.width - 154px - 360px - root.toolbar-x-off;
         y: (root.custom-titlebar ? 78px : 40px + root.titlebar-inset) + root.toolbar-y-off;
         width: 360px;
         height: 380px;
@@ -2132,7 +2133,8 @@ export component AppWindow inherits Window {
                         }
 
                         // Command row (skip the empty-group placeholder).
-                        if q.orig-index >= 0 : Rectangle {
+                        // Hidden when the group is collapsed.
+                        if q.orig-index >= 0 && !q.collapsed : Rectangle {
                             height: 36px;
                             border-radius: Theme.radius-sm;
                             background: qc-ta.has-hover ? Theme.bg-hover : transparent;
