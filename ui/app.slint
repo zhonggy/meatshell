@@ -255,6 +255,7 @@ export component AppWindow inherits Window {
     callback select-net-iface(string);
 
     // --- Top-right popups --------------------------------------------------
+    in-out property <bool> quick-cmd-open: false;   // quick-command popup
     in-out property <bool> download-open: false;  // download manager popup
     in-out property <bool> settings-open: false;  // settings menu popup
 
@@ -1473,14 +1474,14 @@ export component AppWindow inherits Window {
         icon: "\u{E8B8}";
         tooltip: root.lang-en ? "Settings" : "设置";
         active: root.settings-open;
-        clicked => { root.settings-open = !root.settings-open; root.download-open = false; root.ssh-import-hint = ""; }
+        clicked => { root.settings-open = !root.settings-open; root.download-open = false; root.quick-cmd-open = false; root.ssh-import-hint = ""; }
     }
     IconBtn {
         x: root.width - 64px - root.toolbar-x-off; y: (root.custom-titlebar ? 46px : 8px + root.titlebar-inset) + root.toolbar-y-off;
         icon: "\u{E2C4}";
         tooltip: root.lang-en ? "Download" : "下载";
         active: root.download-open;
-        clicked => { root.download-open = !root.download-open; root.settings-open = false; }
+        clicked => { root.download-open = !root.download-open; root.settings-open = false; root.quick-cmd-open = false; }
     }
     IconBtn {
         x: root.width - 94px - root.toolbar-x-off; y: (root.custom-titlebar ? 46px : 8px + root.titlebar-inset) + root.toolbar-y-off;
@@ -1498,6 +1499,14 @@ export component AppWindow inherits Window {
             ? (root.sync-input ? "Sync input: ON" : "Sync input")
             : (root.sync-input ? "会话同步：开" : "会话同步");
         clicked => { root.sync-input = !root.sync-input; root.set-sync-input(root.sync-input); }
+    }
+    // Quick-command popup toggle (left of the session-sync button).
+    IconBtn {
+        x: root.width - 154px - root.toolbar-x-off; y: (root.custom-titlebar ? 46px : 8px + root.titlebar-inset) + root.toolbar-y-off;
+        icon: "\u{EB42}";
+        tooltip: root.lang-en ? "Quick commands" : "快捷命令";
+        active: root.quick-cmd-open;
+        clicked => { root.quick-cmd-open = !root.quick-cmd-open; root.download-open = false; root.settings-open = false; }
     }
 
     // Frameless resize edges (#119): thin hit-zones that start an OS-level
@@ -2016,6 +2025,152 @@ export component AppWindow inherits Window {
                 }
             }
         }
+
+    // --- Quick-command popup (top-right, left of the sync button) -------------
+    // Click-outside-to-close backdrop (same pattern as the download popup).
+    if root.quick-cmd-open : TouchArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.quick-cmd-open = false; }
+    }
+    Rectangle {
+        // Align left edge with the quick-cmd button (154px from right).
+        x: parent.width - 154px - root.toolbar-x-off;
+        y: (root.custom-titlebar ? 78px : 40px + root.titlebar-inset) + root.toolbar-y-off;
+        width: 360px;
+        height: qc-panel.preferred-height;
+        visible: root.quick-cmd-open;
+        background: Theme.bg-panel;
+        border-radius: Theme.radius-md;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        drop-shadow-blur: 16px;
+        drop-shadow-color: #00000070;
+
+        // Swallow pointer events so right-clicks don't fall through to the
+        // terminal's context menu underneath.
+        TouchArea {}
+
+        VerticalLayout {
+            padding: 14px;
+            spacing: 8px;
+
+            HorizontalLayout {
+                Text {
+                    text: root.lang-en ? "Quick commands" : "快捷命令";
+                    color: Theme.text-primary;
+                    font-size: Theme.fs-md;
+                    font-weight: 600;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+                Rectangle {
+                    width: 20px; height: 20px;
+                    border-radius: Theme.radius-sm;
+                    background: qc-close-ta.has-hover ? Theme.bg-hover : transparent;
+                    qc-close-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.quick-cmd-open = false; }
+                    }
+                    Text { text: "\u{E5CD}"; font-family: "Material Icons";
+                           color: Theme.text-secondary; font-size: Theme.fs-sm;
+                           horizontal-alignment: center; vertical-alignment: center; }
+                }
+            }
+
+            Flickable {
+                vertical-stretch: 1;
+                viewport-width: self.width;
+                viewport-height: max(self.height, qc-list.preferred-height);
+                qc-list := VerticalLayout {
+                    alignment: start;
+                    spacing: 2px;
+
+                    if root.quick-commands.length == 0 : Text {
+                        text: root.lang-en ? "No quick commands yet" : "暂无快捷命令";
+                        color: Theme.text-muted;
+                        font-size: Theme.fs-sm;
+                        horizontal-alignment: center;
+                    }
+
+                    for q in root.quick-commands : VerticalLayout {
+                        spacing: 0px;
+
+                        // Group header on the first row of each group.
+                        if q.group-header != "" : Rectangle {
+                            height: 26px;
+                            HorizontalLayout {
+                                padding-top: 4px; padding-left: 4px; spacing: 4px;
+                                Text {
+                                    text: q.collapsed ? "\u{E5CC}" : "\u{E5CF}";
+                                    font-family: "Material Icons";
+                                    color: Theme.text-muted;
+                                    font-size: Theme.fs-sm;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: "\u{E2C7}";
+                                    font-family: "Material Icons";
+                                    color: Theme.text-muted;
+                                    font-size: Theme.fs-sm;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: q.group;
+                                    color: Theme.text-muted;
+                                    font-size: Theme.fs-xs;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                    horizontal-alignment: left;
+                                }
+                            }
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.toggle-quick-group(q.group); }
+                            }
+                        }
+
+                        // Command row (skip the empty-group placeholder).
+                        if q.orig-index >= 0 : Rectangle {
+                            height: 36px;
+                            border-radius: Theme.radius-sm;
+                            background: qc-ta.has-hover ? Theme.bg-hover : transparent;
+                            qc-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                double-clicked => {
+                                    if (root.active-tab-id != "welcome") {
+                                        root.run-command(root.active-tab-id, q.command, false);
+                                    }
+                                }
+                            }
+                            HorizontalLayout {
+                                padding-left: 8px; padding-right: 8px;
+                                spacing: 6px;
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    alignment: center;
+                                    Text {
+                                        text: q.name;
+                                        color: Theme.text-primary;
+                                        font-size: Theme.fs-sm;
+                                        overflow: elide;
+                                    }
+                                    Text {
+                                        text: q.command;
+                                        color: Theme.text-muted;
+                                        font-size: Theme.fs-xs;
+                                        overflow: elide;
+                                        font-family: Theme.font-mono;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Process monitor is now ProcWindow (a detachable top-level window); the
     // former in-app overlay was removed in favour of a real OS window (#23).
