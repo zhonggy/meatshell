@@ -18,6 +18,7 @@ All notable changes are documented here. 本文件记录所有重要变更。
 ### 修复 / Fixed
 
 - **修复版本号与发布校验问题 (#226, #229, #236)。** 命令行支持 `--version` / `-V`，发布脚本与工作流会校验 Cargo 版本、锁文件版本和产物版本，避免再次发布版本号不一致的构建。
+- **修复程序目录配置被卸载删除后连接丢失的问题。** 启动时如果程序目录配置没有连接，会从用户目录配置副本恢复 `sessions.json`、`secret.key` 和 `known_hosts`；后续保存会同步写入程序目录和用户目录两份配置，降低更新/卸载误删风险。
 - **修复串口历史输出搜索不到的问题 (#233)。** 当前可见行没有命中时会继续搜索 scrollback 历史，找到匹配后自动滚动到对应位置并重绘高亮。
 - **修复 Windows 无边框窗口恢复后超出屏幕的问题 (#234)。** 启动与保存布局时按当前显示器尺寸钳制窗口大小，并读取 native 最大化状态，避免 Win11 下恢复到大于屏幕的窗口尺寸。
 
@@ -36,6 +37,7 @@ All notable changes are documented here. 本文件记录所有重要变更。
 ### Fixed
 
 - **Fix version and release validation issues (#226, #229, #236).** The CLI supports `--version` / `-V`, and release scripts/workflows validate Cargo versions, lockfile versions, and built artifact versions to prevent mismatched releases.
+- **Recover connections when the program-directory config was removed during uninstall/update.** If the program config has no connections, startup restores `sessions.json`, `secret.key`, and `known_hosts` from the user config backup; future saves write both the program directory and user directory copies.
 - **Fix searching serial scrollback history (#233).** When no visible row matches, search continues through scrollback history, scrolls to the first match, and redraws highlights.
 - **Clamp restored frameless windows to the current monitor on Windows (#234).** Startup and layout saving now clamp window size to the visible monitor and read the native maximized state, preventing Win11 restores from exceeding the screen.
 
